@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MailboxAI — Business send (demo)</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2em auto; padding: 0 1em; }
+  label { display: block; margin: 0.6em 0; }
+  input, textarea, button { padding: 0.5em; width: 100%; box-sizing: border-box; }
+  button { width: auto; margin-top: 0.5em; }
+  pre { background: #f4f4f4; padding: 1em; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>MailboxAI — Business send (demo)</h1>
+<p>A business sends here; the customer receives the letter on WhatsApp.
+Demo only, no login — keep this page's address private.</p>
+<label>API base <input id="base" size="40"></label>
+
+<h2>1. Register the business</h2>
+<label>Name <input id="bname" value="First Demo Bank"></label>
+<label>Email <input id="bemail" value="statements@firstdemobank.example"></label>
+<label>Address <input id="baddr" value="100 Main Street, Atlanta, GA 30309"></label>
+<label>Portal password (optional — sets the /business-portal login; re-register with the same name/address + a password to set one later)
+<input id="bpw" type="password"></label>
+<button onclick="registerBiz()">Register</button>
+<pre id="regOut"></pre>
+<label>Business ID <input id="bizid"></label>
+<label>Postcard PIN <input id="pin"></label>
+<button onclick="verifyPin()">Verify PIN</button>
+<pre id="pinOut"></pre>
+
+<h2>2. Send mail to a mailbox</h2>
+<label>Mailbox (exact, from the customer's Verified message)
+<input id="mailbox" value="999 Sample Road, Atlanta, GA 30309" placeholder="999 Sample Road, Atlanta, GA 30309"></label>
+<label>Sender (exact business name, for the verified badge)
+<input id="sender" value="First Demo Bank"></label>
+<label>Subject <input id="subject" value="A message for you"></label>
+<label>Letter text
+<textarea id="body" rows="4">Hello! We wanted to share a quick update with you. Thank you for being our customer.</textarea></label>
+<label>Attachment (optional) — scan, statement PDF, coupon image, or short promo video
+<input id="attach" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4"></label>
+<p style="color:#555">Limits are WhatsApp's: image 5 MB, video 16 MB, PDF 100 MB. The customer gets the file in WhatsApp along with the letter — e.g. a coupon image they can show at the store.</p>
+<button onclick="sendMail()">Send mail</button>
+<pre id="sendOut"></pre>
+
+<script>
+const $ = id => document.getElementById(id);
+$("base").value = window.location.origin;
+const url = p => $("base").value.replace(/\/$/, "") + p;
+async function post(path, fields) {
+  const fd = new FormData();
+  for (const k in fields) fd.append(k, fields[k]);
+  const r = await fetch(url(path), {method: "POST", body: fd});
+  return r.json();
+}
+async function registerBiz() {
+  try {
+    const out = await post("/business/register", {
+      name: $("bname").value, email: $("bemail").value,
+      address: $("baddr").value, password: $("bpw").value});
+    $("regOut").textContent = JSON.stringify(out, null, 2);
+    if (out.business_id) $("bizid").value = out.business_id;
+    if (out.dev_pin) $("pin").value = out.dev_pin;
+    if (!out.dev_pin && out.ok)
+      $("regOut").textContent += "\nNo PIN shown: set MAILBOXAI_DEV=1 in .env and restart, then register again.";
+  } catch (e) { $("regOut").textContent = "Error: " + e.message; }
+}
+async function verifyPin() {
+  try {
+    const out = await post("/business/verify-pin", {
+      business_id: $("bizid").value, pin: $("pin").value});
+    $("pinOut").textContent = JSON.stringify(out, null, 2);
+    if (out.ok) $("sender").value = $("bname").value;
+  } catch (e) { $("pinOut").textContent = "Error: " + e.message; }
+}
+async function sendMail() {
+  try {
+    const fd = new FormData();
+    fd.append("mailbox", $("mailbox").value);
+    fd.append("sender", $("sender").value);
+    fd.append("subject", $("subject").value);
+    fd.append("body_text", $("body").value);
+    const file = $("attach").files[0];
+    if (file) fd.append("attachment", file);
+    const r = await fetch(url("/mail/upload"), {method: "POST", body: fd});
+    const out = await r.json();
+    $("sendOut").textContent = JSON.stringify(out, null, 2)
+      + (out.reason
+        ? "\nFailed: " + (out.detail || out.reason)
+        : out.notified === 0
+        ? "\nNobody notified: the mailbox above does not match the customer's mailbox exactly."
+        : "\nCheck the customer's WhatsApp — the letter should be there.");
+  } catch (e) { $("sendOut").textContent = "Error: " + e.message; }
+}
+</script>
+</body>
+</html>

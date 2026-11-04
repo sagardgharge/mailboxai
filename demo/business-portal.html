@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MailboxAI — Business portal</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2em auto; padding: 0 1em; }
+  label { display: block; margin: 0.6em 0; }
+  input, textarea, button { padding: 0.5em; width: 100%; box-sizing: border-box; }
+  button { width: auto; margin-top: 0.5em; }
+  pre { background: #f4f4f4; padding: 1em; white-space: pre-wrap; }
+  .row { border-bottom: 1px solid #ddd; padding: 0.5em 0; }
+</style>
+</head>
+<body>
+<h1>MailboxAI — Business portal</h1>
+<p>Each business logs in and sees only its own sent mail. Demo login:
+sessions live in server memory (a restart logs everyone out);
+passwords are hashed, never stored as text.</p>
+<label>API base <input id="base" size="40"></label>
+
+<div id="loginBox">
+<h2>Log in</h2>
+<label>Business ID or email <input id="ident" placeholder="offers@shopmart.example"></label>
+<label>Password <input id="pw" type="password"></label>
+<button onclick="doLogin()">Log in</button>
+<pre id="loginOut"></pre>
+</div>
+
+<div id="portalBox" style="display:none">
+<p id="bizInfo"></p>
+<button onclick="doLogout()">Log out</button>
+
+<h2>Send mail</h2>
+<p id="sendAs"></p>
+<label>Mailbox (exact, from the customer's Verified message)
+<input id="mailbox" value="999 Sample Road, Atlanta, GA 30309" placeholder="999 Sample Road, Atlanta, GA 30309"></label>
+<label>Subject <input id="subject" value="A message for you"></label>
+<label>Letter text
+<textarea id="body" rows="4">Hello! We wanted to share a quick update with you. Thank you for being our customer.</textarea></label>
+<label>Attachment (optional) — scan, statement PDF, coupon image, or short promo video
+<input id="attach" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4"></label>
+<p style="color:#555">Limits are WhatsApp's: image 5 MB, video 16 MB, PDF 100 MB.</p>
+<button onclick="sendMail()">Send mail</button>
+<pre id="sendOut"></pre>
+
+<h2>Mail you sent</h2>
+<button onclick="loadMail()">Refresh</button>
+<div id="mailList"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+$("base").value = window.location.origin;
+const url = p => $("base").value.replace(/\/$/, "") + p;
+let biz = JSON.parse(localStorage.getItem("mailboxai_biz") || "null");
+
+function showLogin(msg) {
+  localStorage.removeItem("mailboxai_biz");
+  biz = null;
+  $("portalBox").style.display = "none";
+  $("loginBox").style.display = "block";
+  if (msg) $("loginOut").textContent = msg;
+}
+function showPortal() {
+  $("loginBox").style.display = "none";
+  $("portalBox").style.display = "block";
+  $("bizInfo").textContent = "Logged in as " + biz.name
+    + (biz.verified ? " ✓ Verified sender" : " (unverified)")
+    + " — plan " + biz.plan + " (" + biz.membership + ")";
+  $("sendAs").textContent = "Sending as: " + biz.name
+    + " (locked to this login)";
+  loadMail();
+}
+async function doLogin() {
+  try {
+    const fd = new FormData();
+    fd.append("identifier", $("ident").value);
+    fd.append("password", $("pw").value);
+    const r = await fetch(url("/business/login"), {method: "POST", body: fd});
+    const out = await r.json();
+    if (!out.ok) { $("loginOut").textContent = "Login failed: " + (out.detail || out.reason); return; }
+    biz = out;
+    localStorage.setItem("mailboxai_biz", JSON.stringify(out));
+    $("loginOut").textContent = "";
+    showPortal();
+  } catch (e) { $("loginOut").textContent = "Error: " + e.message; }
+}
+async function loadMail() {
+  try {
+    const r = await fetch(url("/business/mail"),
+      {headers: {"Authorization": "Bearer " + biz.token}});
+    const out = await r.json();
+    if (!out.ok) { showLogin("Session expired — please log in again."); return; }
+    if (!out.mail.length) { $("mailList").innerHTML = "<p>No mail sent yet.</p>"; return; }
+    $("mailList").innerHTML = out.mail.map(m =>
+      "<div class='row'>#" + m.id + " [" + m.category.toUpperCase() + "] "
+      + m.subject + " — " + m.mailbox
+      + (m.attachment ? " 📎" : "")
+      + (m.shredded ? " ♻️ shredded by customer" : "")
+      + "</div>").join("");
+  } catch (e) { $("mailList").textContent = "Error: " + e.message; }
+}
+async function sendMail() {
+  try {
+    const fd = new FormData();
+    fd.append("mailbox", $("mailbox").value);
+    fd.append("sender", biz.name);
+    fd.append("subject", $("subject").value);
+    fd.append("body_text", $("body").value);
+    const file = $("attach").files[0];
+    if (file) fd.append("attachment", file);
+    const r = await fetch(url("/mail/upload"), {method: "POST", body: fd});
+    const out = await r.json();
+    $("sendOut").textContent = JSON.stringify(out, null, 2)
+      + (out.reason
+        ? "\nFailed: " + (out.detail || out.reason)
+        : out.notified === 0
+        ? "\nNobody notified: the mailbox above does not match the customer's mailbox exactly."
+        : "\nCheck the customer's WhatsApp — the letter should be there.");
+    loadMail();
+  } catch (e) { $("sendOut").textContent = "Error: " + e.message; }
+}
+async function doLogout() {
+  try {
+    await fetch(url("/business/logout"), {method: "POST",
+      headers: {"Authorization": "Bearer " + biz.token}});
+  } catch (e) {}
+  showLogin("");
+}
+if (biz && biz.token) showPortal();
+</script>
+</body>
+</html>

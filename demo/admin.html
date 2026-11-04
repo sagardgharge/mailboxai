@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MailboxAI — Admin</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2em auto; padding: 0 1em; }
+  .cards { display: flex; flex-wrap: wrap; gap: 1em; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1em; min-width: 140px; }
+  .card b { font-size: 1.8em; display: block; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+  th, td { border-bottom: 1px solid #ddd; padding: 0.5em; text-align: left; }
+  input, select, button { padding: 0.4em; }
+  #err { color: #b00; }
+</style>
+</head>
+<body>
+<h1>MailboxAI — Admin</h1>
+<p>Admin = the service owner, proven by the admin key in <code>.env</code>
+(<code>MAILBOXAI_ADMIN_KEY</code>). Stats are counts only — no letter contents.</p>
+<label>API base <input id="base" size="40"></label>
+<label>Admin key <input id="key" type="password" size="24"></label>
+<button onclick="loadAll()">Load</button>
+<p id="err"></p>
+<h2>Overview</h2>
+<div class="cards" id="cards"></div>
+<h2>Businesses</h2>
+<table>
+<thead><tr><th>Name</th><th>Address</th><th>Verified</th><th>Plan</th><th>Membership</th><th></th></tr></thead>
+<tbody id="biz"></tbody>
+</table>
+<script>
+const $ = id => document.getElementById(id);
+$("base").value = window.location.origin;
+const headers = () => ({"X-Admin-Key": $("key").value});
+async function api(path, opts) {
+  const r = await fetch($("base").value.replace(/\/$/, "") + path,
+    Object.assign({headers: headers()}, opts || {}));
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || ("HTTP " + r.status));
+  return body;
+}
+async function loadAll() {
+  $("err").textContent = "";
+  try {
+    const s = await api("/admin/stats");
+    const cards = [
+      ["Users", s.users], ["Verified users", s.users_verified],
+      ["Mailboxes", s.mailboxes], ["Businesses", s.businesses],
+      ["Verified businesses", s.businesses_verified],
+      ["Letters", s.mail_total], ["Shredded", s.mail_shredded],
+      ["Sheets saved", s.sheets_saved],
+    ];
+    $("cards").innerHTML = cards.map(c =>
+      `<div class="card"><b>${c[1]}</b><span>${c[0]}</span></div>`).join("")
+      + `<div class="card"><span>By membership: ${JSON.stringify(s.businesses_by_membership)}</span></div>`
+      + `<div class="card"><span>By category: ${JSON.stringify(s.mail_by_category)}</span></div>`;
+    const b = await api("/admin/businesses");
+    $("biz").innerHTML = b.businesses.map(x => `<tr>
+      <td>${x.name}</td><td>${x.address}</td><td>${x.verified ? "✓" : "—"}</td>
+      <td><input data-f="plan" data-id="${x.business_id}" value="${x.plan || ""}"></td>
+      <td><select data-f="membership" data-id="${x.business_id}">
+        ${["trial", "active", "past_due", "expired"].map(m =>
+          `<option ${m === x.membership ? "selected" : ""}>${m}</option>`).join("")}
+      </select></td>
+      <td><button onclick="saveRow(this, '${x.business_id}')">Save</button></td>
+    </tr>`).join("");
+  } catch (e) { $("err").textContent = "Error: " + e.message; }
+}
+async function saveRow(btn, id) {
+  const row = btn.closest("tr");
+  const plan = row.querySelector('[data-f="plan"]').value;
+  const membership = row.querySelector('[data-f="membership"]').value;
+  try {
+    await api("/admin/business/membership", {
+      method: "POST", headers: Object.assign(headers(), {"Content-Type": "application/json"}),
+      body: JSON.stringify({business_id: id, plan, membership})});
+    btn.textContent = "Saved ✓";
+    setTimeout(() => btn.textContent = "Save", 1500);
+  } catch (e) { $("err").textContent = "Error: " + e.message; }
+}
+</script>
+</body>
+</html>
