@@ -381,8 +381,6 @@ accuracy — run it on real letters (redacted) for an honest number.
 | `POST /webhook` | Incoming WhatsApp messages (text, image, video, interactive buttons) |
 | `POST /mail/upload` | Scan intake: triage + notify household members; optional attachment (JPEG/PNG/PDF/MP4, WhatsApp size limits) delivered as WhatsApp media (blocked with `402 membership_expired` for an expired verified business) |
 | `GET /admin/backup` | Owner-only (admin key) backup download: the whole mailbox database + every locally stored attachment, as one ZIP. Download it and keep a copy OFF the server — a ZIP on the same machine is not a backup. Never includes `.env`. |
-
-Attachments are stored twice at arrival: sent to WhatsApp (the notification copy) **and** saved next to the database in `attachments/` (the durable copy). Reopening a letter (`OPEN <n>`, 📖 Open button) re-sends the saved file with the letter; older letters without a local copy fall back to the stored WhatsApp media id while WhatsApp retains it, and only then to the "see the original message" note. `attachments/` is git-ignored, so the public repo flip cannot leak coupons, statements, or tax documents. Production backup (roadmap, not the demo): managed database with automated snapshots + versioned, encrypted object storage + per-mailbox export.
 | `GET /digest/{mailbox}` | Today's digest for a mailbox (debug/demo) |
 | `GET /mail/search?mailbox=&q=` | Search the mail archive |
 | `POST /rules` | Add a household sender rule (`always_shred`, `always_urgent`) |
@@ -396,6 +394,9 @@ Attachments are stored twice at arrival: sent to WhatsApp (the notification copy
 | `GET /business-portal` | Per-business portal: login, sent-mail list, send form with sender locked to the login |
 | `POST /business/login` | Portal login by business ID or email + password (hashed, PBKDF2) → session token |
 | `GET /business/mail` | Mail sent by the logged-in business only (Bearer token) |
+
+Attachments are stored twice at arrival: sent to WhatsApp (the notification copy) **and** saved next to the database in `attachments/` (the durable copy). Reopening a letter (`OPEN <n>`, 📖 Open button) re-sends the saved file with the letter; older letters without a local copy fall back to the stored WhatsApp media id while WhatsApp retains it, and only then to the "see the original message" note. `attachments/` is git-ignored, so the public repo flip cannot leak coupons, statements, or tax documents. Production backup (roadmap, not the demo): managed database with automated snapshots + versioned, encrypted object storage + per-mailbox export.
+
 
 ## WhatsApp rules that shape the product
 
